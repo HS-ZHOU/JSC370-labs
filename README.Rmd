@@ -94,6 +94,8 @@ library(data.table)
 library(dtplyr)
 library(dplyr)
 library(leaflet)
+library(mgcv)
+library(ggplot2)
 ```
 2. Load the met data from https://github.com/JSC370/jsc370-2023/blob/main/labs/lab03/met_all.gz or  (Use https://raw.githubusercontent.com/JSC370/jsc370-2023/main/labs/lab03/met_all.gz to download programmatically), and also the station data. For the latter, you can use the code we used during lecture to pre-process the stations data:
 
@@ -182,6 +184,13 @@ met_avg %>%
     wind.sp == met_med %>%  pull(wind.sp) |
     between(atm.press, met_med %>%  pull(atm.press) - 0.0005, met_med %>%  pull(atm.press) + 0.001) 
   ) %>% collect()
+
+# met_avg |>
+#   filter(
+#     USAFID == 720458 | USAFID == 720929 | USAFID == 723200
+#   )
+# met_avg
+
 ```
 
 Knit the document, commit your changes, and save it on GitHub. Don't forget to add `README.md` to the tree, the first time you render it.
@@ -204,7 +213,9 @@ met_state <- met %>%
     wind.sp = mean(wind.sp, na.rm=TRUE),
     atm.press = mean(atm.press, na.rm=TRUE),
     state = STATE
-  )  %>% distinct() %>%  collect()
+  )  %>% 
+  distinct() %>%  
+  collect()
 ```
 
 
@@ -234,6 +245,7 @@ diff <- state_avg_med %>%
   mutate(distance = distance(temp, wind.sp, atm.press, state_temp, state_wind.sp, state_atm.press))
 
 min_diff <- diff %>% group_by(state) %>% summarise(min_diff = min(distance))
+
 med_close <- merge(
   x = min_diff,
   y = diff,
@@ -241,7 +253,9 @@ med_close <- merge(
   by.y = c("distance", "state"),
   all.x = FALSE,
   all.y = FALSE)
-med_close %>% select(state, USAFID)
+
+med_close %>% 
+  select(state, USAFID)
 ```
 
 
@@ -267,7 +281,9 @@ met_location_avg <- met %>%
     lat = mean(lat, na.rm=TRUE),
     lon = mean(lon, na.rm=TRUE),
     state = STATE
-  )  %>% distinct() %>%  collect()
+  )  %>% 
+  distinct() %>%  
+  collect()
 
 
 state_midddle_station_location <- merge(
@@ -286,7 +302,9 @@ distance2 <- function(x, y, a, b) {
 station_distance_from_mid <- state_midddle_station_location %>% 
   mutate(physical_dist = distance2(lat, lon, mean_lat, mean_long))
 
-closest_to_mid <- station_distance_from_mid %>% group_by(state) %>% summarise(min_diff_loc = min(physical_dist))
+closest_to_mid <- station_distance_from_mid %>% 
+  group_by(state) %>% 
+  summarise(min_diff_loc = min(physical_dist))
 
 med_close_loc <- merge(
   x = closest_to_mid,
@@ -309,8 +327,8 @@ q2 <- merge(
 
 leaflet() %>% 
   addProviderTiles("OpenStreetMap") %>% 
-  addCircles(lat=~lat.x, lng=~lon.x, color = "RED",data = q2) %>% 
-  addMarkers(lat=~lat, lng=~lon, data = med_close_loc) 
+  addMarkers(lat=~lat, lng=~lon, data = med_close_loc) %>%
+  addCircles(lat=~lat.x, lng=~lon.x, color = "red",data = q2) 
 
 
 ```
@@ -328,7 +346,19 @@ Start by computing the states' average temperature. Use that measurement to clas
 - High: temp >= 25
 
 ```{r}
+each_state_avg <-  met %>% 
+  group_by(STATE) %>% 
+  summarise(
+    mean_temp = mean(temp, na.rm = TRUE),
+    mean_wind.sp = mean(wind.sp, na.rm=TRUE),
+    mean_atm.press = mean(atm.press, na.rm=TRUE)
+  )
 
+each_state_avg <- each_state_avg %>% mutate(temp_level = case_when(
+  mean_temp < 20 ~ "Low",
+  mean_temp >= 20 &  mean_temp < 25~ "Mid",
+  TRUE ~ "High"
+)) %>% collect()
 ```
 
 Once you are done with that, you can compute the following:
@@ -342,7 +372,12 @@ Once you are done with that, you can compute the following:
 All by the levels described before.
 
 ```{r}
-
+each_state_avg %>% group_by(temp_level) %>% summarise(entries = n(),
+                           NAs = sum(is.na(mean_temp) + is.na(mean_wind.sp) + is.na(mean_atm.press)),
+                           n_state = n(),
+                           mean_wind.sp = mean(mean_wind.sp, na.rm=TRUE),
+                          mean_temp = mean(mean_temp, na.rm = TRUE),
+                          mean_atm.press = mean(mean_atm.press, na.rm=TRUE))
 ```
 
 Knit the document, commit your changes, and push them to GitHub. 
@@ -356,11 +391,26 @@ Let's practice running regression models with smooth functions on X. We need the
 
 - fit both a linear model and a spline model (use `gam()` with a cubic regression spline on wind speed). Summarize and plot the results from the models and interpret which model is the best fit and why.
 
-```{r}
-library(mgcv)
+```{r,warning=FALSE}
+median_station <- met %>% 
+  group_by(USAFID) %>% 
+  summarise(
+    median_temp = median(temp, na.rm = TRUE),
+    median_atm.press = median(atm.press, na.rm=TRUE),
+    median_wind.sp = median(wind.sp, na.rm=TRUE),
+  ) %>% collect()
 
+ggplot(median_station, aes(x=median_wind.sp, y=median_temp)) +
+  geom_point() + 
+  geom_smooth(method=lm, se=FALSE) + 
+  geom_smooth(se=FALSE)
+
+m1 <- lm(median_temp~median_wind.sp, data=median_station)
+m2 <- gam(median_temp~s(median_wind.sp, bs="cr"), data=median_station)
+
+anova(m1, m2)
+plot(m2)
 ```
 
-```{r}
-```
+**The plots from gam and geom_smooth have close shape. Also, these two plots are much better than the linear model. The p-value is much less than 0.05 and we have enough evidence to reject the null hypothesis. This suggests we should use gam model becuase it is better.**
 
