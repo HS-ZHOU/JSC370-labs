@@ -1,9 +1,9 @@
 ---
 title: "Lab 05 - Data Wrangling"
 output: 
-  github_document: default
   tufte::tufte_html:
     css: style.css
+  github_document: default
 link-citations: yes
 ---
 
@@ -252,7 +252,65 @@ Knit the doc and save it on GitHub.
 For each state, identify what is the station that is closest to the mid-point of the state. Combining these with the stations you identified in the previous question, use `leaflet()` to visualize all ~100 points in the same figure, applying different colors for those identified in this question.
 
 ```{r}
+state_middle <- met %>% group_by(STATE)%>% summarise(
+  mean_lat = mean(lat, na.rm=TRUE),
+  mean_long = mean(lon, na.rm=TRUE)
+) %>% collect()
 
+
+met_location_avg <- met %>% 
+  group_by(USAFID) %>% 
+  summarise(
+    temp = mean(temp, na.rm = TRUE),
+    wind.sp = mean(wind.sp, na.rm=TRUE),
+    atm.press = mean(atm.press, na.rm=TRUE),
+    lat = mean(lat, na.rm=TRUE),
+    lon = mean(lon, na.rm=TRUE),
+    state = STATE
+  )  %>% distinct() %>%  collect()
+
+
+state_midddle_station_location <- merge(
+   x = met_location_avg,
+   y = state_middle,
+   by.x = "state",
+   by.y = "STATE",
+   all.x = TRUE,
+   all.y = FALSE
+ )
+
+distance2 <- function(x, y, a, b) {
+    sqrt((x - a)^2 + (y - b)^2)
+}
+
+station_distance_from_mid <- state_midddle_station_location %>% 
+  mutate(physical_dist = distance2(lat, lon, mean_lat, mean_long))
+
+closest_to_mid <- station_distance_from_mid %>% group_by(state) %>% summarise(min_diff_loc = min(physical_dist))
+
+med_close_loc <- merge(
+  x = closest_to_mid,
+  y = station_distance_from_mid,
+  by.x = c("min_diff_loc", "state"),
+  by.y = c("physical_dist", "state"),
+  all.x = FALSE,
+  all.y = FALSE)
+
+med_close_loc %>% select(state, USAFID)
+
+q2 <- merge(
+  x=med_close,
+  y=met_state,
+  by.x = c("USAFID", "state"),
+  by.y = c("USAFID", "state"),
+  all.x = TRUE,
+  all.y = FALSE
+)
+
+leaflet() %>% 
+  addProviderTiles("OpenStreetMap") %>% 
+  addCircles(lat=~lat.x, lng=~lon.x, color = "RED",data = q2) %>% 
+  addMarkers(lat=~lat, lng=~lon, data = med_close_loc) 
 
 
 ```
