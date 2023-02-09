@@ -372,9 +372,9 @@ Once you are done with that, you can compute the following:
 All by the levels described before.
 
 ```{r}
-each_state_avg %>% group_by(temp_level) %>% summarise(entries = n(),
-                           NAs = sum(is.na(mean_temp) + is.na(mean_wind.sp) + is.na(mean_atm.press)),
-                           n_state = n(),
+each_state_avg %>% group_by(temp_level) %>% summarise(num_entry = n(),
+                                                      num_state = n(),
+                           num_of_na = sum(is.na(mean_temp) + is.na(mean_wind.sp) + is.na(mean_atm.press)),
                            mean_wind.sp = mean(mean_wind.sp, na.rm=TRUE),
                           mean_temp = mean(mean_temp, na.rm = TRUE),
                           mean_atm.press = mean(mean_atm.press, na.rm=TRUE))
