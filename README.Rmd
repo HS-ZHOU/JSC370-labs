@@ -89,10 +89,22 @@ Once you are done setting up the project, you can now start working with the MET
 ## Setup in R
 
 1. Load the `data.table` (and the `dtplyr` and `dplyr` packages if you plan to work with those).
-
+```{r}
+library(data.table)
+library(dtplyr)
+library(dplyr)
+library(leaflet)
+```
 2. Load the met data from https://github.com/JSC370/jsc370-2023/blob/main/labs/lab03/met_all.gz or  (Use https://raw.githubusercontent.com/JSC370/jsc370-2023/main/labs/lab03/met_all.gz to download programmatically), and also the station data. For the latter, you can use the code we used during lecture to pre-process the stations data:
 
-```{r stations-data, eval = FALSE}
+```{r checking-file}
+fn <- "https://raw.githubusercontent.com/JSC370/jsc370-2023/main/labs/lab03/met_all.gz"
+if (!file.exists("met_all.gz"))
+  download.file(fn, destfile = "met_all.gz")
+met <- data.table::fread("met_all.gz")
+```
+
+```{r stations-data, eval = TRUE}
 # Download the data
 stations <- fread("ftp://ftp.ncdc.noaa.gov/pub/data/noaa/isd-history.csv")
 stations[, USAF := as.integer(USAF)]
@@ -114,13 +126,62 @@ stations <- stations[n == 1,][, n := NULL]
 ```
 
 3. Merge the data as we did during the lecture.
+```{r}
+met <- merge(
+  # Data
+  x = met,
+  y = stations,
+  # List of variables to match 
+  by.x = "USAFID",
+  by.y = "USAF",
+  # Which obs to keep?
+  all.x = TRUE,
+  all.y = FALSE
+)
+
+```
+
 
 ## Question 1: Representative station for the US
 
 Across all weather stations, what is the median station in terms of temperature, wind speed, and atmospheric pressure? Look for the three weather stations that best represent continental US using the `quantile()` function. Do these three coincide?
 
 ```{r}
+met_avg <- met %>% 
+  group_by(USAFID) %>% 
+  summarise(
+    temp = mean(temp, na.rm = TRUE),
+    wind.sp = mean(wind.sp, na.rm=TRUE),
+    atm.press = mean(atm.press, na.rm=TRUE)
+  ) %>% collect()
+```
 
+
+```{r}
+met_med <- met_avg %>% 
+  summarise(across(
+    c(temp, wind.sp, atm.press), 
+    function(x) quantile(x, prob = 0.5, na.rm = TRUE) 
+    )
+  ) %>% collect()
+```
+
+```{r}
+met_avg %>% 
+  filter(
+    temp == met_med %>%  pull(temp) | 
+    wind.sp == met_med %>%  pull(wind.sp) |
+    atm.press == met_med %>%  pull(atm.press)
+  ) %>% collect()
+```
+
+```{r}
+met_avg %>% 
+  filter(
+    between(temp, met_med %>%  pull(temp) - 0.003, met_med %>%  pull(temp) + 0.002) | 
+    wind.sp == met_med %>%  pull(wind.sp) |
+    between(atm.press, met_med %>%  pull(atm.press) - 0.0005, met_med %>%  pull(atm.press) + 0.001) 
+  ) %>% collect()
 ```
 
 Knit the document, commit your changes, and save it on GitHub. Don't forget to add `README.md` to the tree, the first time you render it.
@@ -130,8 +191,59 @@ Knit the document, commit your changes, and save it on GitHub. Don't forget to a
 Just like the previous question, you are asked to identify what is the most representative, the median, station per state. This time, instead of looking at one variable at a time, look at the euclidean distance. If multiple stations show in the median, select the one located at the lowest latitude.
 
 ```{r}
+distance <- function(x, y, z, a, b, c) {
+    sqrt((x - a)^2 + (y - b)^2 + (z - c)^2)
+}
 
+met_state <- met %>% 
+  group_by(USAFID) %>% 
+  summarize(
+    lat = mean(lat, na.rm=TRUE),
+    lon = mean(lon, na.rm=TRUE),
+    temp = mean(temp, na.rm = TRUE),
+    wind.sp = mean(wind.sp, na.rm=TRUE),
+    atm.press = mean(atm.press, na.rm=TRUE),
+    state = STATE
+  )  %>% distinct() %>%  collect()
 ```
+
+
+```{r}
+state_median <-  met_state %>% 
+  group_by(state) %>% 
+  summarize(
+    state = state,
+    state_temp = median(temp, na.rm=TRUE),
+    state_wind.sp = median(wind.sp, na.rm=TRUE),
+    state_atm.press = median(atm.press, na.rm=TRUE)
+  ) %>% 
+  distinct() %>% 
+  collect()
+
+state_avg_med <- merge(
+  x = met_state,
+  y = state_median,
+  by.x = "state",
+  by.y = "state",
+  all.x = TRUE,
+  all.y = FALSE
+)
+
+state_avg_med[is.na(state_avg_med)] <- 0
+diff <- state_avg_med %>% 
+  mutate(distance = distance(temp, wind.sp, atm.press, state_temp, state_wind.sp, state_atm.press))
+
+min_diff <- diff %>% group_by(state) %>% summarise(min_diff = min(distance))
+med_close <- merge(
+  x = min_diff,
+  y = diff,
+  by.x = c("min_diff", "state"),
+  by.y = c("distance", "state"),
+  all.x = FALSE,
+  all.y = FALSE)
+med_close %>% select(state, USAFID)
+```
+
 
 Knit the doc and save it on GitHub.
 
@@ -140,6 +252,8 @@ Knit the doc and save it on GitHub.
 For each state, identify what is the station that is closest to the mid-point of the state. Combining these with the stations you identified in the previous question, use `leaflet()` to visualize all ~100 points in the same figure, applying different colors for those identified in this question.
 
 ```{r}
+
+
 
 ```
 
@@ -185,5 +299,10 @@ Let's practice running regression models with smooth functions on X. We need the
 - fit both a linear model and a spline model (use `gam()` with a cubic regression spline on wind speed). Summarize and plot the results from the models and interpret which model is the best fit and why.
 
 ```{r}
+library(mgcv)
 
 ```
+
+```{r}
+```
+
